@@ -1,0 +1,39 @@
+@startuml
+'https://plantuml.com/class-diagram
+
+
+class BinanceStreamManager{}
+class BinanceWebSocketApiManager{
++create_stream()
++is_manager_stopping()
++get_stream_info()
++pop_stream_signal_from_stream_signal_buffer()
++pop_stream_data_from_stream_buffer()
++stop_manager_with_all_streams()
+}
+
+class BinanceWebSocketApiSocket{
++start_socket()
+}
+class BinanceWebSocketApiConnection{
++__aenter__():async
++____aexit__():async
++send(string):async
++receive():async string
++close():async
+}
+
+class UnicornFy{
++binance_com_websocket(string):json
+}
+BinanceStreamManager-->BinanceWebSocketApiManager
+
+BinanceWebSocketApiManager --> BinanceWebSocketApiSocket
+BinanceWebSocketApiManager --> BinanceWebSocketApiRestclient
+BinanceWebSocketApiManager --> BinanceWebSocketApiRestServer
+BinanceWebSocketApiSocket ..> BinanceWebSocketApiManager
+BinanceWebSocketApiSocket --> BinanceWebSocketApiConnection
+BinanceWebSocketApiConnection ..> BinanceWebSocketApiManager
+BinanceWebSocketApiConnection --> WebSocketClientProtocol
+BinanceWebSocketApiSocket o--  UnicornFy
+@enduml

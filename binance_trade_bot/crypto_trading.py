@@ -9,7 +9,7 @@ from .scheduler import SafeScheduler
 from .strategies import get_strategy
 
 
-def main():
+def __main():
     logger = Logger()
     logger.info("Starting")
 
@@ -17,12 +17,13 @@ def main():
     db = Database(logger, config)
     manager = BinanceAPIManager(config, db, logger)
     # check if we can access API feature that require valid config
-    try:
-        _ = manager.get_account()
+    """try:        
+        _ = manager.get_account()        
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Couldn't access Binance API - API keys may be wrong or lack sufficient permissions")
         logger.error(e)
-        return
+        return"""
+
     strategy = get_strategy(config.STRATEGY)
     if strategy is None:
         logger.error("Invalid strategy name")
@@ -49,3 +50,18 @@ def main():
             time.sleep(1)
     finally:
         manager.stream_manager.close()
+#!python3
+import pybithumb
+import pyupbit
+from pybithumb import WebSocketManager
+def main():
+    logger = Logger()
+    logger.info("Starting")
+
+    config = Config()
+    db = Database(logger, config)
+    manager = BinanceAPIManager(config, db, logger)
+    resp = manager.buy_limit_order("XRP", "KRW", 600, 1)
+    print(resp)
+
+

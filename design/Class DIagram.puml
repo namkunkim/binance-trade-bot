@@ -1,0 +1,51 @@
+@startuml
+'https://plantuml.com/class-diagram
+
+class BinanceAPIManager{
+
+}
+
+class Database{
+
+}
+class AutoTrader{
+}
+
+class Strategy{
+}
+
+enum TradeState{
+    STARTING = "STARTING"
+    ORDERED = "ORDERED"
+    COMPLETE = "COMPLETE"
+}
+
+class Trade{
+
+}
+
+class CryptoTrading  <<function>>{
+ main()
+
+}
+
+
+class ApiServer <<function>>{
+
+}
+
+AutoTrader --> BinanceAPIManager
+Strategy --> AutoTrader
+CryptoTrading -> Strategy
+CryptoTrading --> Database
+Database-->Trade
+ApiServer->Trade
+TradeState<--ApiServer
+Database<---ApiServer
+Logger<--ApiServer
+Logger<--AutoTrader
+Logger<--BinanceAPIManager
+Logger<--BinanceStreamManager
+Logger-->NotificationHandler
+SafeScheduler <--CryptoTrading
+@enduml

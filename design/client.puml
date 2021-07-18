@@ -1,0 +1,19 @@
+@startuml
+'https://plantuml.com/class-diagram
+class Client{
++get_trade_fee()
++get_bnb_burn_spot_margin()
++get_account()
++get_symbol_ticker()
++get_symbol_info()
++cancel_order()
++order_market_sell()
++order_limit_buy()
++order_limit_sell()
++get_order()
+}
+
+BinanceAPIManager -> Client
+BinanceAPIManager -> BinanceStreamManager
+BinanceStreamManager -> Client
+@enduml

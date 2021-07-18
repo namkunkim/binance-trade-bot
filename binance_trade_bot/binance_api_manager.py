@@ -2,7 +2,8 @@ import math
 import time
 import traceback
 from typing import Dict, Optional
-
+import pybithumb
+import ccxt
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 from cachetools import TTLCache, cached
@@ -17,11 +18,21 @@ from .models import Coin
 class BinanceAPIManager:
     def __init__(self, config: Config, db: Database, logger: Logger):
         # initializing the client class calls `ping` API endpoint, verifying the connection
+
+        """
         self.binance_client = Client(
             config.BINANCE_API_KEY,
             config.BINANCE_API_SECRET_KEY,
             tld=config.BINANCE_TLD,
         )
+        """
+
+        """
+        빗썸에서는 connection api, security api는 private api를 사용할때 필요하다.
+        코인들의 현재 시세등의 오픈된 정보의 획득은 public api - pybithumb을 사용하는데.   
+        """
+        self.client = pybithumb.Bithumb(config.BINANCE_API_KEY, config.BINANCE_API_SECRET_KEY)
+
         self.db = db
         self.logger = logger
         self.config = config
@@ -34,23 +45,29 @@ class BinanceAPIManager:
         self.stream_manager = BinanceStreamManager(
             self.cache,
             self.config,
-            self.binance_client,
+            self.client,
             self.logger,
         )
 
     @cached(cache=TTLCache(maxsize=1, ttl=43200))
     def get_trade_fees(self) -> Dict[str, float]:
-        return {ticker["symbol"]: ticker["taker"] for ticker in self.binance_client.get_trade_fee()["tradeFee"]}
+        """return {ticker["symbol"]: ticker["taker"] for ticker in self.binance_client.get_trade_fee()["tradeFee"]}"""
+        d = dict()
+        for currency in self.db.get_coins():
+            d[currency] = self.client.get_trading_fee(currency)
+        return d
 
-    @cached(cache=TTLCache(maxsize=1, ttl=60))
+    """    @cached(cache=TTLCache(maxsize=1, ttl=60))
     def get_using_bnb_for_fees(self):
-        return self.binance_client.get_bnb_burn_spot_margin()["spotBNBBurn"]
+        return self.binance_client.get_bnb_burn_spot_margin()["spotBNBBurn"]"""
 
     def get_fee(self, origin_coin: Coin, target_coin: Coin, selling: bool):
         base_fee = self.get_trade_fees()[origin_coin + target_coin]
+        """no support binance coin - BNB"""
+        """        
         if not self.get_using_bnb_for_fees():
             return base_fee
-
+            """
         # The discount is only applied if we have enough BNB to cover the fee
         amount_trading = (
             self._sell_quantity(origin_coin.symbol, target_coin.symbol)
@@ -76,8 +93,76 @@ class BinanceAPIManager:
     def get_account(self):
         """
         Get account information
+            {
+                "makerCommission": 15,
+                "takerCommission": 15,
+                "buyerCommission": 0,
+                "sellerCommission": 0,
+                "canTrade": true,
+                "canWithdraw": true,
+                "canDeposit": true,
+                "balances": [
+                    {
+                        "asset": "BTC",
+                        "free": "4723846.89208129",
+                        "locked": "0.00000000"
+                    },
+                    {
+                        "asset": "LTC",
+                        "free": "4763368.68006011", ##단위가 뭐지?
+                        "locked": "0.00000000"
+                    }
+                ]
+            }
+            
+            가상화폐 이름의 키 값 안에는 
+            보유 중인 코인('free'), 
+            거래 진행 중인 코인('used'), 
+            전체 코인('total')
+            https://wikidocs.net/31065            
+            return self.binance_client.get_account()
+
+        //get_account : balance 정보가 없어 get_balance()  
+        {
+            "status" : "0000",
+            "data" : {
+                "opening_price" : "504000",
+                "closing_price" : "505000",
+                "min_price" : "504000",
+                "max_price" : "516000",
+                "units_traded" : "14.71960286",
+                "acc_trade_value" : "16878100",
+                "prev_closing_price" : "503000",
+                "units_traded_24H" : "1471960286",
+                "acc_trade_value_24H" : "16878100",
+                "fluctate_24H" : "1000",
+                "fluctate_rate_24H" : 0.19,
+                "date" : "1417141032622"
+            }
+        }
         """
-        return self.binance_client.get_account()
+        account = dict()
+        lst = []
+        for currency in self.db.get_coins():
+            d = dict()
+            b = self.client.get_balance(currency)
+            free = b.index(0) - b.index(1)
+            if free > 0.0:
+                d["free"] = b.index(0)
+                """보유코인, 사용중코인, 보유원화, 사용중원화"""
+                lst.append(d)
+        account["balances"] = lst
+        return account
+
+    def get_symbol_ticker(self):
+        lst = []
+        for currency in self.db.get_coins():
+            d = dict()
+            price = self.client.get_current_price(currency)
+            d["symbol"] = currency+self.config.BRIDGE ##default KRW
+            d["price"] = price
+            lst.append(d)
+        return lst
 
     def get_ticker_price(self, ticker_symbol: str):
         """
@@ -86,8 +171,9 @@ class BinanceAPIManager:
         price = self.cache.ticker_values.get(ticker_symbol, None)
         if price is None and ticker_symbol not in self.cache.non_existent_tickers:
             self.cache.ticker_values = {
-                ticker["symbol"]: float(ticker["price"]) for ticker in self.binance_client.get_symbol_ticker()
+                ticker["symbol"]: float(ticker["price"]) for ticker in self.get_symbol_ticker()
             }
+            """self.binance_client.get_symbol_ticker()"""
             self.logger.debug(f"Fetched all ticker prices: {self.cache.ticker_values}")
             price = self.cache.ticker_values.get(ticker_symbol, None)
             if price is None:
@@ -107,9 +193,10 @@ class BinanceAPIManager:
                 cache_balances.update(
                     {
                         currency_balance["asset"]: float(currency_balance["free"])
-                        for currency_balance in self.binance_client.get_account()["balances"]
+                        for currency_balance in self.get_account()["balances"]
                     }
                 )
+                """self.binance_client.get_account()["balances"]"""
                 self.logger.debug(f"Fetched all balances: {cache_balances}")
                 if currency_symbol not in cache_balances:
                     cache_balances[currency_symbol] = 0.0
@@ -131,23 +218,78 @@ class BinanceAPIManager:
                 attempts += 1
         return None
 
-    def get_symbol_filter(self, origin_symbol: str, target_symbol: str, filter_type: str):
+    """ def get_symbol_filter(self, origin_symbol: str, target_symbol: str, filter_type: str):
         return next(
             _filter
             for _filter in self.binance_client.get_symbol_info(origin_symbol + target_symbol)["filters"]
             if _filter["filterType"] == filter_type
-        )
+        )"""
+
+    def get_step_size(self, origin_symbol: str, target_symbol: str):
+        """
+        LOT_SIZE
+        :stepSize는 구입할 코인의 최소 단위로, 구매할 코인의 가격에 대해 호가 가격 단위를 결정해야 한다.
+        https://www.bithumb.com/customer_support/info_guide?seq=536&categorySeq=203
+        """
+        orderbook = pybithumb.get_orderbook(origin_symbol, target_symbol)
+        asks = orderbook['asks']
+        price = asks[0]['price']
+        return self.get_sale_unit(price)
+
+    # noinspection PyMethodMayBeStatic
+    def get_sale_unit(self, price: int):
+        if price < 100:
+            return 10
+        elif price < 1000:
+            return 1
+        elif price < 10000:
+            return 0.1
+        elif price < 100000:
+            return 0.01
+        else:
+            return 0.001
+
+    def get_min_notional(self, origin_symbol: str, target_symbol: str):
+        """
+        MIN_NOTIONAL
+        :minNotional 최소 구입 갯수 * 비용
+        https://www.bithumb.com/customer_support/info_guide?seq=536&categorySeq=203
+        """
+        orderbook = pybithumb.get_orderbook(origin_symbol, target_symbol)
+        asks = orderbook['asks']
+        price = asks[0]['price']
+        return self.get_sale_unit(price) * price
 
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_alt_tick(self, origin_symbol: str, target_symbol: str):
-        step_size = self.get_symbol_filter(origin_symbol, target_symbol, "LOT_SIZE")["stepSize"]
+        """step_size = self.get_symbol_filter(origin_symbol, target_symbol, "LOT_SIZE")["stepSize"]"""
+        step_size = self.get_step_size(origin_symbol, target_symbol)
         if step_size.find("1") == 0:
             return 1 - step_size.find(".")
         return step_size.find("1") - 1
 
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_min_notional(self, origin_symbol: str, target_symbol: str):
+        """minQty is the minimum amount you can order (quantity)
+        minNotional is the minimum value of your order. (price * quantity)
+
+        // Check minimum order size
+        if ( price * quantity < minNotional ) {
+            quantity = minNotional / price;
+        }"""
+
         return float(self.get_symbol_filter(origin_symbol, target_symbol, "MIN_NOTIONAL")["minNotional"])
+
+    def cancel_order(self, order: BinanceOrder):
+        ret = self.client.cancel_order(order.get_order_desc(self.config.BRIDGE))
+        return {
+            "symbol": order.symbol,
+            "orderId": order.id,
+            "result": ret
+        }
+
+    def sell_market_order(self, order_currency: str, payment_currency: str, unit: int):
+        return self.client.sell_market_order(order_currency, payment_currency, unit)
 
     def _wait_for_order(
         self, order_id, origin_symbol: str, target_symbol: str
@@ -170,9 +312,10 @@ class BinanceAPIManager:
                 if self._should_cancel_order(order_status):
                     cancel_order = None
                     while cancel_order is None:
-                        cancel_order = self.binance_client.cancel_order(
+                        """cancel_order = self.binance_client.cancel_order(
                             symbol=origin_symbol + target_symbol, orderId=order_id
-                        )
+                        )"""
+                        cancel_order = self.cancel_order(order_status)
                     self.logger.info("Order timeout, canceled...")
 
                     # sell partially
@@ -182,9 +325,10 @@ class BinanceAPIManager:
                         order_quantity = self._sell_quantity(origin_symbol, target_symbol)
                         partially_order = None
                         while partially_order is None:
-                            partially_order = self.binance_client.order_market_sell(
+                            partially_order = self.sell_market_order(origin_symbol, target_symbol, order_quantity)
+                            """self.binance_client.order_market_sell(
                                 symbol=origin_symbol + target_symbol, quantity=order_quantity
-                            )
+                            )"""
 
                     self.logger.info("Going back to scouting mode...")
                     return None
@@ -245,6 +389,62 @@ class BinanceAPIManager:
         origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
         return math.floor(target_balance * 10 ** origin_tick / from_coin_price) / float(10 ** origin_tick)
 
+    def buy_limit_order(self, order_currency: str, payment_currency: str, price: int, unit: int):
+        print("buy_limit_order")
+        resp = self.client.buy_limit_order(order_currency, price, unit, payment_currency)
+        print("buy_limit_order : " + str(resp))
+        if resp is None:
+            return None
+        elif isinstance(resp, dict):
+            print(resp)
+            return None
+
+        self.cache.order_desc[resp[2]] = resp
+        order = self.client.get_order_completed(resp)
+        print("buy_limit_order detail : " + str(order))
+
+        # print(resp)
+        # order_id = resp[2]
+        # desc = [
+        #     "bid",
+        #     order_currency,
+        #     order_id,
+        #     payment_currency
+        # ]
+        # resp = self.client.get_order_completed(desc)
+        # if resp is None:
+        #     return None
+        # """
+        #  TODO : resp['order_status'] --> current_order_status
+        # """
+        # """
+        # 바이낸스
+        # https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md#new-order--trade
+        # """
+        # """
+        # 빗썸
+        # https://apidocs.bithumb.com/docs/orders_detail
+        # cumulative_quote_asset_transacted_quantity 의 의미는 뭘까? : 거래 시점에 코인 구매에 소비된 총 비용
+        # 빗썸 기준에서는 defail order info에서 각 거래된 내용의 총 지불 (중계료 포함)비용을 전달 하면 될 것 같다.
+        # """
+        # cumulative_cost = 0
+        # for contract in resp["contract"]:
+        #     cumulative_cost = cumulative_cost + contract["total"]
+        report = {
+            "symbol": order_currency + payment_currency,
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "order_id": resp[2],
+            "cumulative_quote_asset_transacted_quantity": 0.0,
+            "current_order_status": "NEW",
+            "order_price": price,
+            "transaction_time": ""
+        }
+
+        print("order : "+ str(report))
+
+        return report
+
     def _buy_alt(self, origin_coin: Coin, target_coin: Coin):
         """
         Buy altcoin
@@ -268,11 +468,12 @@ class BinanceAPIManager:
         order_guard = self.stream_manager.acquire_order_guard()
         while order is None:
             try:
-                order = self.binance_client.order_limit_buy(
+                """order = self.binance_client.order_limit_buy(
                     symbol=origin_symbol + target_symbol,
                     quantity=order_quantity,
                     price=from_coin_price,
-                )
+                )"""
+                order = self.buy_limit_order(origin_symbol, target_symbol, from_coin_price, order_quantity)
                 self.logger.info(order)
             except BinanceAPIException as e:
                 self.logger.info(e)
@@ -303,6 +504,44 @@ class BinanceAPIManager:
         origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
         return math.floor(origin_balance * 10 ** origin_tick) / float(10 ** origin_tick)
 
+    def sell_limit_order(self, order_currency: str, payment_currency: str, price: int, unit: int):
+        resp = self.client.sell_limit_order(order_currency, price, unit, payment_currency)
+        if resp is None:
+            return None
+
+        self.cache.order_desc[resp[2]] = resp
+
+        # resp = self.client.get_order_completed(resp)
+        # if resp is None:
+        #     return None
+        # """
+        #  TODO : resp['order_status'] --> current_order_status
+        # """
+        # """
+        # 바이낸스
+        # https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md#new-order--trade
+        # """
+        # """
+        # 빗썸
+        # https://apidocs.bithumb.com/docs/orders_detail
+        # cumulative_quote_asset_transacted_quantity 의 의미는 뭘까? : 거래 시점에 코인 구매에 소비된 총 비용
+        # 빗썸 기준에서는 defail order info에서 각 거래된 내용의 총 지불 (중계료 포함)비용을 전달 하면 될 것 같다.
+        # """
+        # cumulative_cost = 0
+        # for contract in resp["contract"]:
+        #     cumulative_cost = cumulative_cost + contract["total"]
+        report = {
+            "symbol": order_currency + payment_currency,
+            "side": "SELL",
+            "order_type": "LIMIT",
+            "order_id": resp[2],
+            "cumulative_quote_asset_transacted_quantity": 0,
+            "current_order_status": "NEW",
+            "order_price": price,
+            "transaction_time": 0,
+        }
+        return report
+
     def _sell_alt(self, origin_coin: Coin, target_coin: Coin):
         """
         Sell altcoin
@@ -326,9 +565,11 @@ class BinanceAPIManager:
         order_guard = self.stream_manager.acquire_order_guard()
         while order is None:
             # Should sell at calculated price to avoid lost coin
-            order = self.binance_client.order_limit_sell(
+            """order = self.binance_client.order_limit_sell(
                 symbol=origin_symbol + target_symbol, quantity=order_quantity, price=from_coin_price
-            )
+            )"""
+
+        order = self.sell_limit_order(origin_symbol, target_symbol, from_coin_price, order_quantity)
 
         self.logger.info("order")
         self.logger.info(order)

@@ -1,0 +1,12 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+BinanceStreamManager --> BinanceWebSocketApiManager:create_stream()
+activate BinanceWebSocketApiManager
+BinanceWebSocketApiManager --> BinanceWebSocketApiManager:_add_stream_to_stream_list()\n 새 스트림을 위한 \nthreading_lock n\list 생성 및 등록
+
+BinanceWebSocketApiManager-->asyncio:new_event_loop()
+asyncio -> BinanceWebSocketApiManager:이벤트 루프 생성\n내부 리스트에 등록
+
+deactivate BinanceWebSocketApiManager
+@enduml

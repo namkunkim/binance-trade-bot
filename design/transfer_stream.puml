@@ -1,0 +1,41 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+BinanceStreamManager -> BinanceWebSocketApiManager:create_stream()
+activate BinanceWebSocketApiManager
+BinanceWebSocketApiManager -> BinanceWebSocketApiManager:_add_stream_to_stream_list()\n 새 스트림을 위한 \nthreading_lock n\list 생성 및 등록
+
+BinanceWebSocketApiManager->asyncio:new_event_loop()
+asyncio --> BinanceWebSocketApiManager:loop \n이벤트 루프 생성\n내부 리스트에 등록
+
+BinanceWebSocketApiManager -> threading:Thread(_create_stream_thread)
+threading --> BinanceWebSocketApiManager : thread
+BinanceWebSocketApiManager -> threading:start()
+
+deactivate BinanceWebSocketApiManager
+
+threading -> BinanceWebSocketApiManager : _create_stream_thread()
+
+activate BinanceWebSocketApiManager
+BinanceWebSocketApiManager->BinanceWebSocketApiManager:is_stop_request(stream_id)\n 스트림 연결 체크
+BinanceWebSocketApiManager->asyncio:set_event_loop(loop) \n async 쓰레드에 루프 등록
+
+BinanceWebSocketApiManager->BinanceWebSocketApiSocket : (stream_id, channels, markets)
+BinanceWebSocketApiSocket --> BinanceWebSocketApiManager:socket
+BinanceWebSocketApiManager -> Loop : run_until_complete()
+Loop -> BinanceWebSocketApiSocket : start_socket()
+activate BinanceWebSocketApiSocket
+BinanceWebSocketApiSocket -> BinanceWebSocketApiConnection
+BinanceWebSocketApiConnection -> BinanceWebSocketApiSocket:websocket
+
+
+loop True:
+    BinanceWebSocketApiSocket -> BinanceWebSocketApiManager:is_stop_request()
+    BinanceWebSocketApiManager --> BinanceWebSocketApiSocket: close 요청 여부 회신
+    alt True case
+    BinanceWebSocketApiSocket -> BinanceWebSocketApiConnection:close()
+    end
+end
+deactivate BinanceWebSocketApiSocket
+deactivate BinanceWebSocketApiManager
+@enduml

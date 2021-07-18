@@ -1,0 +1,45 @@
+@startuml
+'https://plantuml.com/class-diagram
+class BithumbStreamManager{
+    +acquire_order_guard():Guard
+}
+
+class BithumbWebSocketApiManager{
+    -stream_data_buffer
+    -stream_signal_buffer
+    -streams
+    'stream id 별 socket 정보 들고 있기.
+    +create_stream(type, symbols, ticktype)
+    'Args:
+    'type     (str           ): 구독 메시지 종류 (ticker/transaction/orderbookdepth)
+    'symbols  (list          ): 구독할 암호 화폐의 리스트 [BTC_KRW, ETH_KRW, …]
+    'ticktype (list, optional): tick 종류 리스트 (30M/1H/12H/24H/MID)
+    'qsize    (int , optional): 메시지를 저장할 Queue의 크기
+    'loop 생성, WebSocketManager에 넘긴다.
+    '내부에서 스트림 id 생성, 스트림 id 별, 쓰레드 생성, 수신 데이터 버퍼, 연결 상태 정보 관리
+    '쓰레드는 WebSocketManager를 생성하여 연결 송수신 관리
+    +pop_stream_signal():{type, stream_id}
+    'type : connected, disconnected
+    +pop_stream_data():json
+    +stop_all_streams()
+    +is_manager_stopping():boolean
+    +push_stream_signal({type, stream_id})
+    'raw --> json 변환
+    -convert_to_json(raw):json
+    -push_stream_data(data)
+}
+class WebSocketManager{
+    '소켓 생성 시
+    'loop, stream id,push_stream_signal callback
+    +run():
+    'connection 성공 후에 signal을  BithumbWebSocketApiManager로 올린다.
+    +get():
+    +terminate():
+    'disconnected 성공 후에 signal을  BithumbWebSocketApiManager로 올린다.
+    +is_alive():boolean
+}
+
+BithumbStreamManager o.. BithumbWebSocketApiManager
+BithumbWebSocketApiManager o.. WebSocketManager : create
+WebSocketManager ..> BithumbWebSocketApiManager : push_stream_signal
+@enduml
