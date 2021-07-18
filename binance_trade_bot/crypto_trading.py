@@ -9,7 +9,7 @@ from .scheduler import SafeScheduler
 from .strategies import get_strategy
 
 
-def __main():
+def main():
     logger = Logger()
     logger.info("Starting")
 
@@ -54,14 +54,15 @@ def __main():
 import pybithumb
 import pyupbit
 from pybithumb import WebSocketManager
-def main():
+def __main():
     logger = Logger()
     logger.info("Starting")
 
     config = Config()
     db = Database(logger, config)
     manager = BinanceAPIManager(config, db, logger)
-    resp = manager.buy_limit_order("XRP", "KRW", 600, 1)
+    #resp = manager.buy_limit_order("XRP", "KRW", 691, 3)
+    #resp = manager.sell_limit_order("XRP", "KRW", 800, 1)
     print(resp)
 
 

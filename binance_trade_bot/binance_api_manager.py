@@ -54,8 +54,18 @@ class BinanceAPIManager:
         """return {ticker["symbol"]: ticker["taker"] for ticker in self.binance_client.get_trade_fee()["tradeFee"]}"""
         d = dict()
         for currency in self.db.get_coins():
-            d[currency] = self.client.get_trading_fee(currency)
+            for target in ["KRW", "BTC"]:
+                print("get_trade_fees currency : " + currency.symbol)
+                fee = self.client.get_trading_fee(currency.symbol, payment_currency=target)
+                try:
+                    fee_f = float(str(fee))
+                    print("get_trade_fees fee : " + str(fee))
+                    d[currency.symbol + target] = float(fee)
+                    print("get_trade_fees d : " + str(d))
+                except:
+                    print(currency.symbol + target + " " + str(fee))
         return d
+
 
     """    @cached(cache=TTLCache(maxsize=1, ttl=60))
     def get_using_bnb_for_fees(self):
@@ -145,34 +155,50 @@ class BinanceAPIManager:
         lst = []
         for currency in self.db.get_coins():
             d = dict()
-            b = self.client.get_balance(currency)
-            free = b.index(0) - b.index(1)
-            if free > 0.0:
-                d["free"] = b.index(0)
-                """보유코인, 사용중코인, 보유원화, 사용중원화"""
-                lst.append(d)
+            print("get_account currency : " + currency.symbol)
+            b = self.client.get_balance(currency.symbol)
+            try:
+                free = b.index(0) - b.index(1)
+                print("get_account free : " + str(free))
+                if free > 0.0:
+                    d[currency.symbol+"KRW"] = free
+                    """보유코인, 사용중코인, 보유원화, 사용중원화"""
+                    lst.append(d)
+            except:
+                print(currency.symbol + " " + str(b))
+
         account["balances"] = lst
         return account
 
     def get_symbol_ticker(self):
         lst = []
         for currency in self.db.get_coins():
-            d = dict()
-            price = self.client.get_current_price(currency)
-            d["symbol"] = currency+self.config.BRIDGE ##default KRW
-            d["price"] = price
-            lst.append(d)
+            for target in ["KRW", "BTC"]:
+                d = dict()
+                print("get_symbol_ticker currency : " + currency.symbol)
+                price = pybithumb.get_current_price(currency.symbol, payment_currency=target)
+                try:
+                    price_f = float(str(price))
+                    print("get_symbol_ticker price : " + str(price))
+                    d["symbol"] = currency.symbol + target
+                    d["price"] = str(price)
+                    print("get_symbol_ticker d : " + str(d))
+                    lst.append(d)
+                except:
+                    print(currency.symbol + target + " " + str(price))
         return lst
 
     def get_ticker_price(self, ticker_symbol: str):
         """
         Get ticker price of a specific coin
         """
+        print("get_ticker_price : " + ticker_symbol)
         price = self.cache.ticker_values.get(ticker_symbol, None)
         if price is None and ticker_symbol not in self.cache.non_existent_tickers:
             self.cache.ticker_values = {
                 ticker["symbol"]: float(ticker["price"]) for ticker in self.get_symbol_ticker()
             }
+            print("get_ticker_price .cache.ticker_values : " +str(self.cache.ticker_values))
             """self.binance_client.get_symbol_ticker()"""
             self.logger.debug(f"Fetched all ticker prices: {self.cache.ticker_values}")
             price = self.cache.ticker_values.get(ticker_symbol, None)
@@ -218,12 +244,30 @@ class BinanceAPIManager:
                 attempts += 1
         return None
 
-    """ def get_symbol_filter(self, origin_symbol: str, target_symbol: str, filter_type: str):
-        return next(
-            _filter
-            for _filter in self.binance_client.get_symbol_info(origin_symbol + target_symbol)["filters"]
-            if _filter["filterType"] == filter_type
-        )"""
+    # def get_symbol_filter(self, origin_symbol: str, target_symbol: str, filter_type: str):
+    #     return next(
+    #         _filter
+    #         for _filter in self.binance_client.get_symbol_info(origin_symbol + target_symbol)["filters"]
+    #         # """
+    #         #     "filters": [
+    #         #         {
+    #         #             "filterType": "PRICE_FILTER",
+    #         #             "minPrice": "0.00000100",
+    #         #             "maxPrice": "100000.00000000",
+    #         #             "tickSize": "0.00000100"
+    #         #         }, {
+    #         #             "filterType": "LOT_SIZE",
+    #         #             "minQty": "0.00100000",
+    #         #             "maxQty": "100000.00000000",
+    #         #             "stepSize": "0.00100000"
+    #         #         }, {
+    #         #             "filterType": "MIN_NOTIONAL",
+    #         #             "minNotional": "0.00100000"
+    #         #         }
+    #         #     ]
+    #         # """
+    #         if _filter["filterType"] == filter_type
+    #     )
 
     def get_step_size(self, origin_symbol: str, target_symbol: str):
         """
@@ -232,9 +276,11 @@ class BinanceAPIManager:
         https://www.bithumb.com/customer_support/info_guide?seq=536&categorySeq=203
         """
         orderbook = pybithumb.get_orderbook(origin_symbol, target_symbol)
+        if orderbook is None:
+            return None
         asks = orderbook['asks']
         price = asks[0]['price']
-        return self.get_sale_unit(price)
+        return str(self.get_sale_unit(price))
 
     # noinspection PyMethodMayBeStatic
     def get_sale_unit(self, price: int):
@@ -263,22 +309,29 @@ class BinanceAPIManager:
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_alt_tick(self, origin_symbol: str, target_symbol: str):
         """step_size = self.get_symbol_filter(origin_symbol, target_symbol, "LOT_SIZE")["stepSize"]"""
+        print("get_alt_tick " + origin_symbol + " " + target_symbol)
         step_size = self.get_step_size(origin_symbol, target_symbol)
+        if step_size is None:
+            return 0
+        print("get_alt_tick " + str(step_size))
         if step_size.find("1") == 0:
             return 1 - step_size.find(".")
         return step_size.find("1") - 1
 
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_min_notional(self, origin_symbol: str, target_symbol: str):
-        """minQty is the minimum amount you can order (quantity)
-        minNotional is the minimum value of your order. (price * quantity)
+        #https://github.com/jaggedsoft/php-binance-api/issues/205
+        # """minQty is the minimum amount you can order (quantity)
+        # minNotional is the minimum value of your order. (price * quantity)
+        #
+        # // Check minimum order size
+        # if ( price * quantity < minNotional ) {
+        #     quantity = minNotional / price;
+        # }"""
 
-        // Check minimum order size
-        if ( price * quantity < minNotional ) {
-            quantity = minNotional / price;
-        }"""
-
-        return float(self.get_symbol_filter(origin_symbol, target_symbol, "MIN_NOTIONAL")["minNotional"])
+        # return float(self.get_symbol_filter(origin_symbol, target_symbol, "MIN_NOTIONAL")["minNotional"])
+        # 빗썸은 최소 비용이 1000원 이상이어야 한다.
+        return 1000.0
 
     def cancel_order(self, order: BinanceOrder):
         ret = self.client.cancel_order(order.get_order_desc(self.config.BRIDGE))
@@ -387,6 +440,7 @@ class BinanceAPIManager:
         from_coin_price = from_coin_price or self.get_ticker_price(origin_symbol + target_symbol)
 
         origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
+
         return math.floor(target_balance * 10 ** origin_tick / from_coin_price) / float(10 ** origin_tick)
 
     def buy_limit_order(self, order_currency: str, payment_currency: str, price: int, unit: int):
