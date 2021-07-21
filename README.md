@@ -57,7 +57,7 @@ Create a .cfg file named `user.cfg` based off `.user.cfg.example`, then add your
 -   **hourToKeepScoutHistory** - Controls how many hours of scouting values are kept in the database. After the amount of time specified has passed, the information will be deleted.
 -   **scout_sleep_time** - Controls how many seconds are waited between each scout.
 -   **scout_multiplier** - Controls the value by which the difference between the current state of coin ratios and previous state of ratios is multiplied. For bigger values, the bot will wait for bigger margins to arrive before making a trade.
--   **strategy** - The trading strategy to use. See [`binance_trade_bot/strategies`](binance_trade_bot/strategies/README.md) for more information
+-   **strategy** - The trading strategy to use. See [`bithumb_trade_bot/strategies`](bithumb_trade_bot/strategies/README.md) for more information
 -   **buy_timeout/sell_timeout** - Controls how many minutes to wait before cancelling a limit order (buy/sell) and returning to "scout" mode. 0 means that the order will never be cancelled prematurely.
 -   **scout_sleep_time** - Controls how many seconds bot should wait between analysis of current prices. Since the bot now operates on websockets this value should be set to something low (like 1), the reasons to set it above 1 are when you observe high CPU usage by bot or you got api errors about requests weight limit.
 
@@ -98,7 +98,7 @@ If you are interested in running a Telegram bot, more information can be found a
 ### Run
 
 ```shell
-python -m binance_trade_bot
+python -m bithumb_trade_bot
 ```
 
 ### Docker
@@ -136,7 +136,7 @@ pre-commit install
 ```
 
 The scouting algorithm is unlikely to be changed. If you'd like to contribute an alternative
-method, [add a new strategy](binance_trade_bot/strategies/README.md).
+method, [add a new strategy](bithumb_trade_bot/strategies/README.md).
 
 ## Related Projects
 

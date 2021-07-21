@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from binance_trade_bot import backtest
+from bithumb_trade_bot import backtest
 
 if __name__ == "__main__":
     history = []

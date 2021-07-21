@@ -5,8 +5,8 @@ from typing import Dict
 
 from sqlitedict import SqliteDict
 
-from .binance_api_manager import BinanceAPIManager
-from .binance_stream_manager import BinanceOrder
+from .bithumb_api_manager import BithumbAPIManager
+from .bithumb_stream_manager import BithumbOrder
 from .config import Config
 from .database import Database
 from .logger import Logger
@@ -16,7 +16,7 @@ from .strategies import get_strategy
 cache = SqliteDict("data/backtest_cache.db")
 
 
-class MockBinanceManager(BinanceAPIManager):
+class MockBithumbManager(BithumbAPIManager):
     def __init__(
         self,
         config: Config,
@@ -88,7 +88,7 @@ class MockBinanceManager(BinanceAPIManager):
 
         event = defaultdict(lambda: None, order_price=from_coin_price, cumulative_quote_asset_transacted_quantity=0)
 
-        return BinanceOrder(event)
+        return BithumbOrder(event)
 
     def sell_alt(self, origin_coin: Coin, target_coin: Coin):
         origin_symbol = origin_coin.symbol
@@ -165,7 +165,7 @@ def backtest(
     db = MockDatabase(logger, config)
     db.create_database()
     db.set_coins(config.SUPPORTED_COIN_LIST)
-    manager = MockBinanceManager(config, db, logger, start_date, start_balances)
+    manager = MockBithumbManager(config, db, logger, start_date, start_balances)
 
     starting_coin = db.get_coin(starting_coin or config.SUPPORTED_COIN_LIST[0])
     if manager.get_currency_balance(starting_coin.symbol) == 0:

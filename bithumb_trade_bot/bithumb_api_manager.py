@@ -3,19 +3,16 @@ import time
 import traceback
 from typing import Dict, Optional
 import pybithumb
-import ccxt
-from binance.client import Client
-from binance.exceptions import BinanceAPIException
 from cachetools import TTLCache, cached
 
-from .binance_stream_manager import BinanceCache, BinanceOrder, BinanceStreamManager, OrderGuard
+from .bithumb_stream_manager import BithumbCache, BithumbOrder, BithumbStreamManager, OrderGuard
 from .config import Config
 from .database import Database
 from .logger import Logger
 from .models import Coin
 
 
-class BinanceAPIManager:
+class BithumbAPIManager:
     def __init__(self, config: Config, db: Database, logger: Logger):
         # initializing the client class calls `ping` API endpoint, verifying the connection
 
@@ -37,12 +34,12 @@ class BinanceAPIManager:
         self.logger = logger
         self.config = config
 
-        self.cache = BinanceCache()
-        self.stream_manager: Optional[BinanceStreamManager] = None
+        self.cache = BithumbCache()
+        self.stream_manager: Optional[BithumbStreamManager] = None
         self.setup_websockets()
 
     def setup_websockets(self):
-        self.stream_manager = BinanceStreamManager(
+        self.stream_manager = BithumbStreamManager(
             self.cache,
             self.config,
             self.client,
@@ -355,7 +352,7 @@ class BinanceAPIManager:
         # 빗썸은 최소 비용이 1000원 이상이어야 한다.
         return 1000.0
 
-    def cancel_order(self, order: BinanceOrder):
+    def cancel_order(self, order: BithumbOrder):
         ret = self.client.cancel_order(order.get_order_desc(self.config.BRIDGE))
         return {
             "symbol": order.symbol,
@@ -368,9 +365,9 @@ class BinanceAPIManager:
 
     def _wait_for_order(
         self, order_id, origin_symbol: str, target_symbol: str
-    ) -> Optional[BinanceOrder]:  # pylint: disable=unsubscriptable-object
+    ) -> Optional[BithumbOrder]:  # pylint: disable=unsubscriptable-object
         while True:
-            order_status: BinanceOrder = self.cache.orders.get(order_id, None)
+            order_status: BithumbOrder = self.cache.orders.get(order_id, None)
             if order_status is not None:
                 break
             self.logger.info(f"Waiting for order {order_id} to be created")
@@ -425,7 +422,7 @@ class BinanceAPIManager:
 
     def wait_for_order(
         self, order_id, origin_symbol: str, target_symbol: str, order_guard: OrderGuard
-    ) -> Optional[BinanceOrder]:  # pylint: disable=unsubscriptable-object
+    ) -> Optional[BithumbOrder]:  # pylint: disable=unsubscriptable-object
         with order_guard:
             return self._wait_for_order(order_id, origin_symbol, target_symbol)
 
@@ -452,7 +449,7 @@ class BinanceAPIManager:
 
         return False
 
-    def buy_alt(self, origin_coin: Coin, target_coin: Coin) -> BinanceOrder:
+    def buy_alt(self, origin_coin: Coin, target_coin: Coin) -> BithumbOrder:
         return self.retry(self._buy_alt, origin_coin, target_coin)
 
     def _buy_quantity(
@@ -580,7 +577,7 @@ class BinanceAPIManager:
 
         return order
 
-    def sell_alt(self, origin_coin: Coin, target_coin: Coin) -> BinanceOrder:
+    def sell_alt(self, origin_coin: Coin, target_coin: Coin) -> BithumbOrder:
         return self.retry(self._sell_alt, origin_coin, target_coin)
 
     def _sell_quantity(self, origin_symbol: str, target_symbol: str, origin_balance: float = None):

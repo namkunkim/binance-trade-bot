@@ -3,7 +3,7 @@ You can add your own strategy to this folder. The filename must end with `_strat
 and contain the following:
 
 ```python
-from binance_trade_bot.auto_trader import AutoTrader
+from bithumb_trade_bot.auto_trader import AutoTrader
 
 class Strategy(AutoTrader):
 

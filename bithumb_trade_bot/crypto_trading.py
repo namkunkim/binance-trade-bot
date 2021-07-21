@@ -1,7 +1,7 @@
 #!python3
 import time
 
-from .binance_api_manager import BinanceAPIManager
+from .bithumb_api_manager import BithumbAPIManager
 from .config import Config
 from .database import Database
 from .logger import Logger
@@ -15,7 +15,7 @@ def main():
 
     config = Config()
     db = Database(logger, config)
-    manager = BinanceAPIManager(config, db, logger)
+    manager = BithumbAPIManager(config, db, logger)
     # check if we can access API feature that require valid config
     """try:        
         _ = manager.get_account()        
@@ -60,7 +60,7 @@ def __main():
 
     config = Config()
     db = Database(logger, config)
-    manager = BinanceAPIManager(config, db, logger)
+    manager = BithumbAPIManager(config, db, logger)
     #resp = manager.buy_limit_order("XRP", "KRW", 691, 3)
     #resp = manager.sell_limit_order("XRP", "KRW", 800, 1)
     print(resp)

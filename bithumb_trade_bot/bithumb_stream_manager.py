@@ -5,9 +5,6 @@ from contextlib import contextmanager
 from typing import Dict, Set, Tuple
 import pybithumb
 import os
-##import binance.client
-##from binance.exceptions import BinanceAPIException, BinanceRequestException
-##from unicorn_binance_websocket_api import BinanceWebSocketApiManager
 from multiprocessing import Process, Manager
 from .config import Config
 from .logger import Logger
@@ -18,7 +15,7 @@ from .logger import Logger
 from pybithumb import WebSocketManager
 
 
-class BinanceOrder:  # pylint: disable=too-few-public-methods
+class BithumbOrder:  # pylint: disable=too-few-public-methods
     def __init__(self, report):
         self.event = report
         self.symbol = report["symbol"]
@@ -49,12 +46,12 @@ class BinanceOrder:  # pylint: disable=too-few-public-methods
 
 
 # pylint: disable=too-few-public-methods
-class BinanceCache:
+class BithumbCache:
     ticker_values: Dict[str, float] = {}
     _balances: Dict[str, float] = {}
     _balances_mutex: threading.Lock = threading.Lock()
     non_existent_tickers: Set[str] = set()
-    orders: Dict[str, BinanceOrder] = {}
+    orders: Dict[str, BithumbOrder] = {}
     ##order_desc: Dict[str, list] = {}
 
     def __init__(self):
@@ -162,8 +159,8 @@ def _transaction_process(symbols: list, que):
         que.put(resp)
 
 
-class BinanceStreamManager:
-    def __init__(self, cache: BinanceCache, config: Config, client: pybithumb.Bithumb, logger: Logger):
+class BithumbStreamManager:
+    def __init__(self, cache: BithumbCache, config: Config, client: pybithumb.Bithumb, logger: Logger):
         self.cache = cache
         self.logger = logger
         self.config = config
@@ -213,7 +210,7 @@ class BinanceStreamManager:
                 time.sleep(1)
             fake_report = self._parse_order(order_id, resp)
             self.logger.info(f"Pending order {order_id} for symbol {symbol} fetched:\n{fake_report}", False)
-            self.cache.orders[fake_report["order_id"]] = BinanceOrder(fake_report)
+            self.cache.orders[fake_report["order_id"]] = BithumbOrder(fake_report)
 
     def _invalidate_balances(self):
         with self.cache.open_balances() as balances:
@@ -271,7 +268,7 @@ class BinanceStreamManager:
             if msg["type"] == "order":
                 report = self._parse_order(msg["id"], msg["detail"])
                 self.logger.info("_main_thread " + str(report))
-                self.cache.orders[msg["id"]] = BinanceOrder(report)
+                self.cache.orders[msg["id"]] = BithumbOrder(report)
             elif msg["type"] == "ticker":
                 content = msg["content"]
                 if content["tickType"] == "24H":

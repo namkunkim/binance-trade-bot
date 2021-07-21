@@ -3,7 +3,7 @@ from typing import Dict, List
 
 from sqlalchemy.orm import Session
 
-from .binance_api_manager import BinanceAPIManager
+from .bithumb_api_manager import BithumbAPIManager
 from .config import Config
 from .database import Database
 from .logger import Logger
@@ -11,7 +11,7 @@ from .models import Coin, CoinValue, Pair
 
 
 class AutoTrader:
-    def __init__(self, binance_manager: BinanceAPIManager, database: Database, logger: Logger, config: Config):
+    def __init__(self, binance_manager: BithumbAPIManager, database: Database, logger: Logger, config: Config):
         self.manager = binance_manager
         self.db = database
         self.logger = logger
