@@ -28,9 +28,14 @@ class AutoTrader:
         balance = self.manager.get_currency_balance(pair.from_coin.symbol)
         from_coin_price = self.manager.get_ticker_price(pair.from_coin + self.config.BRIDGE)
 
-        if balance and balance * from_coin_price > self.manager.get_min_notional(
+        min_national = self.manager.get_min_notional(
             pair.from_coin.symbol, self.config.BRIDGE.symbol
-        ):
+        )
+
+        self.logger.info("try to sell " + str(balance) + ", " + str(from_coin_price) + " , " +
+                         str(balance * from_coin_price) + " , " + str(min_national))
+
+        if balance and balance * from_coin_price > min_national:
             can_sell = True
         else:
             self.logger.info("Skipping sell")

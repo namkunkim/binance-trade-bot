@@ -55,15 +55,15 @@ class BinanceAPIManager:
         d = dict()
         for currency in self.db.get_coins():
             for target in ["KRW", "BTC"]:
-                print("get_trade_fees currency : " + currency.symbol)
+                self.logger.info("get_trade_fees currency : " + currency.symbol)
                 fee = self.client.get_trading_fee(currency.symbol, payment_currency=target)
                 try:
                     fee_f = float(str(fee))
-                    print("get_trade_fees fee : " + str(fee))
-                    d[currency.symbol + target] = float(fee)
-                    print("get_trade_fees d : " + str(d))
+                    self.logger.info("get_trade_fees fee : " + str(fee))
+                    d[currency.symbol + target] = fee_f
+                    self.logger.info("get_trade_fees d : " + str(d))
                 except:
-                    print(currency.symbol + target + " " + str(fee))
+                    self.logger.info(currency.symbol + target + " " + str(fee))
         return d
 
 
@@ -73,6 +73,9 @@ class BinanceAPIManager:
 
     def get_fee(self, origin_coin: Coin, target_coin: Coin, selling: bool):
         base_fee = self.get_trade_fees()[origin_coin + target_coin]
+
+        self.logger.info("get_fee base_fee : " + str(base_fee))
+
         """no support binance coin - BNB"""
         """        
         if not self.get_using_bnb_for_fees():
@@ -86,6 +89,9 @@ class BinanceAPIManager:
         )
 
         fee_amount = amount_trading * base_fee * 0.75
+
+        self.logger.info("get_fee fee_amount : " + str(fee_amount))
+
         if origin_coin.symbol == "BNB":
             fee_amount_bnb = fee_amount
         else:
@@ -95,6 +101,8 @@ class BinanceAPIManager:
             fee_amount_bnb = fee_amount * origin_price
 
         bnb_balance = self.get_currency_balance("BNB")
+
+        self.logger.info("get_fee bnb_balance : " + str(bnb_balance) + " fee_amount_bnb : " + fee_amount_bnb)
 
         if bnb_balance >= fee_amount_bnb:
             return base_fee * 0.75
@@ -132,7 +140,7 @@ class BinanceAPIManager:
             https://wikidocs.net/31065            
             return self.binance_client.get_account()
 
-        //get_account : balance 정보가 없어 get_balance()  
+        //get_account : balance 정보가 없어 get_balance()
         {
             "status" : "0000",
             "data" : {
@@ -153,19 +161,32 @@ class BinanceAPIManager:
         """
         account = dict()
         lst = []
+
+        d = dict()
+        b = self.client.get_balance("BTC")
+        try:
+            free = b[2] - b[3]
+            if free > 0.0:
+                d["free"] = float(int(free))
+                d["asset"] = "KRW"
+                lst.append(d)
+        except Exception as e:
+            self.logger.info("KRW" + " " + str(b) + " e : " + str(e))
+
         for currency in self.db.get_coins():
             d = dict()
-            print("get_account currency : " + currency.symbol)
             b = self.client.get_balance(currency.symbol)
+            ##self.logger.info("get_account currency : " + currency.symbol + " balance : " + str(b))
             try:
-                free = b.index(0) - b.index(1)
-                print("get_account free : " + str(free))
+                free = b[0] - b[1]
+                ##self.logger.info("get_account free : " + str(free))
                 if free > 0.0:
-                    d[currency.symbol+"KRW"] = free
+                    d["free"] = free
+                    d["asset"] = currency.symbol##+"KRW"
                     """보유코인, 사용중코인, 보유원화, 사용중원화"""
                     lst.append(d)
-            except:
-                print(currency.symbol + " " + str(b))
+            except Exception as e:
+                self.logger.info(currency.symbol + " " + str(b) + " e : " + str(e))
 
         account["balances"] = lst
         return account
@@ -175,32 +196,32 @@ class BinanceAPIManager:
         for currency in self.db.get_coins():
             for target in ["KRW", "BTC"]:
                 d = dict()
-                print("get_symbol_ticker currency : " + currency.symbol)
+                ##self.logger.info("get_symbol_ticker currency : " + currency.symbol)
                 price = pybithumb.get_current_price(currency.symbol, payment_currency=target)
                 try:
                     price_f = float(str(price))
-                    print("get_symbol_ticker price : " + str(price))
+                    ##self.logger.info("get_symbol_ticker price : " + str(price))
                     d["symbol"] = currency.symbol + target
                     d["price"] = str(price)
-                    print("get_symbol_ticker d : " + str(d))
+                    ##self.logger.info("get_symbol_ticker d : " + str(d))
                     lst.append(d)
                 except:
-                    print(currency.symbol + target + " " + str(price))
+                    self.logger.info(currency.symbol + target + " " + str(price))
         return lst
 
     def get_ticker_price(self, ticker_symbol: str):
         """
         Get ticker price of a specific coin
         """
-        print("get_ticker_price : " + ticker_symbol)
+        self.logger.info("get_ticker_price : " + ticker_symbol)
         price = self.cache.ticker_values.get(ticker_symbol, None)
         if price is None and ticker_symbol not in self.cache.non_existent_tickers:
             self.cache.ticker_values = {
                 ticker["symbol"]: float(ticker["price"]) for ticker in self.get_symbol_ticker()
             }
-            print("get_ticker_price .cache.ticker_values : " +str(self.cache.ticker_values))
+            self.logger.info("get_ticker_price .cache.ticker_values : " +str(self.cache.ticker_values))
             """self.binance_client.get_symbol_ticker()"""
-            self.logger.debug(f"Fetched all ticker prices: {self.cache.ticker_values}")
+            self.logger.info(f"Fetched all ticker prices: {self.cache.ticker_values}")
             price = self.cache.ticker_values.get(ticker_symbol, None)
             if price is None:
                 self.logger.info(f"Ticker does not exist: {ticker_symbol} - will not be fetched from now on")
@@ -214,6 +235,7 @@ class BinanceAPIManager:
         """
         with self.cache.open_balances() as cache_balances:
             balance = cache_balances.get(currency_symbol, None)
+            self.logger.info("get_currency_balance in : " + str(currency_symbol) + " " +str(balance))
             if force or balance is None:
                 cache_balances.clear()
                 cache_balances.update(
@@ -223,7 +245,7 @@ class BinanceAPIManager:
                     }
                 )
                 """self.binance_client.get_account()["balances"]"""
-                self.logger.debug(f"Fetched all balances: {cache_balances}")
+                self.logger.info(f"Fetched all balances: {cache_balances}")
                 if currency_symbol not in cache_balances:
                     cache_balances[currency_symbol] = 0.0
                     return 0.0
@@ -309,11 +331,11 @@ class BinanceAPIManager:
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_alt_tick(self, origin_symbol: str, target_symbol: str):
         """step_size = self.get_symbol_filter(origin_symbol, target_symbol, "LOT_SIZE")["stepSize"]"""
-        print("get_alt_tick " + origin_symbol + " " + target_symbol)
+        self.logger.info("get_alt_tick " + origin_symbol + " " + target_symbol)
         step_size = self.get_step_size(origin_symbol, target_symbol)
         if step_size is None:
             return 0
-        print("get_alt_tick " + str(step_size))
+        self.logger.info("get_alt_tick " + str(step_size))
         if step_size.find("1") == 0:
             return 1 - step_size.find(".")
         return step_size.find("1") - 1
@@ -351,16 +373,16 @@ class BinanceAPIManager:
             order_status: BinanceOrder = self.cache.orders.get(order_id, None)
             if order_status is not None:
                 break
-            self.logger.debug(f"Waiting for order {order_id} to be created")
+            self.logger.info(f"Waiting for order {order_id} to be created")
             time.sleep(1)
 
-        self.logger.debug(f"Order created: {order_status}")
+        self.logger.info(f"Order created: {order_status}")
 
         while order_status.status != "FILLED":
             try:
                 order_status = self.cache.orders.get(order_id, None)
 
-                self.logger.debug(f"Waiting for order {order_id} to be filled")
+                self.logger.info(f"Waiting for order {order_id} to be filled")
 
                 if self._should_cancel_order(order_status):
                     cancel_order = None
@@ -398,7 +420,7 @@ class BinanceAPIManager:
                 self.logger.info(f"Unexpected Error: {e}")
                 time.sleep(1)
 
-        self.logger.debug(f"Order filled: {order_status}")
+        self.logger.info(f"Order filled: {order_status}")
         return order_status
 
     def wait_for_order(
@@ -441,23 +463,25 @@ class BinanceAPIManager:
 
         origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
 
+        self.logger.info(f"_buy_quantity {target_balance}, {from_coin_price}, {origin_tick}")
+
         return math.floor(target_balance * 10 ** origin_tick / from_coin_price) / float(10 ** origin_tick)
 
     def buy_limit_order(self, order_currency: str, payment_currency: str, price: int, unit: int):
-        print("buy_limit_order")
+        self.logger.info(f"buy_limit_order {order_currency} {payment_currency} {str(price)} {str(unit)}")
         resp = self.client.buy_limit_order(order_currency, price, unit, payment_currency)
-        print("buy_limit_order : " + str(resp))
+        self.logger.info("buy_limit_order : " + str(resp))
         if resp is None:
             return None
         elif isinstance(resp, dict):
-            print(resp)
+            self.logger.info(resp)
             return None
 
         self.cache.order_desc[resp[2]] = resp
         order = self.client.get_order_completed(resp)
-        print("buy_limit_order detail : " + str(order))
+        self.logger.info("buy_limit_order detail : " + str(order))
 
-        # print(resp)
+        # self.logger.info(resp)
         # order_id = resp[2]
         # desc = [
         #     "bid",
@@ -495,7 +519,7 @@ class BinanceAPIManager:
             "transaction_time": ""
         }
 
-        print("order : "+ str(report))
+        self.logger.info("order : "+ str(report))
 
         return report
 
@@ -514,8 +538,13 @@ class BinanceAPIManager:
         target_balance = self.get_currency_balance(target_symbol)
         from_coin_price = self.get_ticker_price(origin_symbol + target_symbol)
 
+        self.logger.info("origin_balance : " + str(origin_balance) + " target_balance : "
+                         + str(target_balance) + "from_coin_price " + str(from_coin_price))
+
         order_quantity = self._buy_quantity(origin_symbol, target_symbol, target_balance, from_coin_price)
-        self.logger.info(f"BUY QTY {order_quantity} of <{origin_symbol}>")
+        self.logger.info(f"BUY QTY[1] {order_quantity} of <{origin_symbol}>")
+        order_quantity = order_quantity * 0.9
+        self.logger.info(f"BUY QTY[2] {order_quantity} of <{origin_symbol}>")
 
         # Try to buy until successful
         order = None
@@ -537,13 +566,15 @@ class BinanceAPIManager:
 
         trade_log.set_ordered(origin_balance, target_balance, order_quantity)
 
-        order_guard.set_order(origin_symbol, target_symbol, int(order["orderId"]))
-        order = self.wait_for_order(order["orderId"], origin_symbol, target_symbol, order_guard)
+        order_guard.set_order(origin_symbol, target_symbol, order["order_id"])
+        order = self.wait_for_order(order["order_id"], origin_symbol, target_symbol, order_guard)
 
         if order is None:
             return None
 
         self.logger.info(f"Bought {origin_symbol}")
+        self.cache.orders.pop(order["order_id"])
+        self.cache.order_desc.pop(order["order_id"])
 
         trade_log.set_complete(order.cumulative_quote_qty)
 
@@ -618,20 +649,19 @@ class BinanceAPIManager:
         order = None
         order_guard = self.stream_manager.acquire_order_guard()
         while order is None:
+            order = self.sell_limit_order(origin_symbol, target_symbol, from_coin_price, order_quantity)
             # Should sell at calculated price to avoid lost coin
             """order = self.binance_client.order_limit_sell(
                 symbol=origin_symbol + target_symbol, quantity=order_quantity, price=from_coin_price
             )"""
-
-        order = self.sell_limit_order(origin_symbol, target_symbol, from_coin_price, order_quantity)
 
         self.logger.info("order")
         self.logger.info(order)
 
         trade_log.set_ordered(origin_balance, target_balance, order_quantity)
 
-        order_guard.set_order(origin_symbol, target_symbol, int(order["orderId"]))
-        order = self.wait_for_order(order["orderId"], origin_symbol, target_symbol, order_guard)
+        order_guard.set_order(origin_symbol, target_symbol, (order["order_id"]))
+        order = self.wait_for_order(order["order_id"], origin_symbol, target_symbol, order_guard)
 
         if order is None:
             return None
@@ -641,7 +671,8 @@ class BinanceAPIManager:
             new_balance = self.get_currency_balance(origin_symbol, True)
 
         self.logger.info(f"Sold {origin_symbol}")
-
+        self.cache.orders.pop(order["order_id"])
+        self.cache.order_desc.pop(order["order_id"])
         trade_log.set_complete(order.cumulative_quote_qty)
 
         return order

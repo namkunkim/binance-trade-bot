@@ -75,7 +75,7 @@ class OrderGuard:
         self.mutex.acquire()
         self.tag = None
 
-    def set_order(self, origin_symbol: str, target_symbol: str, order_id: int):
+    def set_order(self, origin_symbol: str, target_symbol: str, order_id: str):
         self.tag = (origin_symbol + target_symbol, order_id)
 
     def __enter__(self):
@@ -89,21 +89,28 @@ class OrderGuard:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.pending_orders.remove(self.tag)
 
+def _print(msg : str):
+    #print(msg)
+    return None
 
-def _resp_polling_process(in_config, in_dict: Dict, out_queue):
-    print("_resp_polling_process " + str(os.getpid()))
+
+def _resp_polling_process(in_config, in_processing, in_dict: Dict, out_queue):
+    _print("_resp_polling_process " + str(os.getpid()))
     client = pybithumb.Bithumb(in_config.BINANCE_API_KEY, in_config.BINANCE_API_SECRET_KEY)
-    print(str(os.getpid()) + " _resp_polling_process client : " + str(client))
+    _print(str(os.getpid()) + " _resp_polling_process client : " + str(client))
     while True:
+        if not in_processing:
+            exit()
+            break
         orders = in_dict.copy()
-        print(str(os.getpid()) + " _resp_polling_process orders : " + str(orders))
+        _print(str(os.getpid()) + " _resp_polling_process orders : " + str(orders))
         if orders.__len__ != 0:
             for order_id in orders:
-                print(str(os.getpid()) + " _resp_polling_process order : "  + str(orders[order_id]))
+                _print(str(os.getpid()) + " _resp_polling_process order : "  + str(orders[order_id]))
                 resp = client.get_order_completed(orders[order_id])
-                print(str(os.getpid()) + " _resp_polling_process order_indetail : " + str(resp))
+                _print(str(os.getpid()) + " _resp_polling_process order_indetail : " + str(resp))
                 output = {"type": "order", "id": order_id, "detail": resp}
-                print(str(os.getpid()) + " _resp_polling_process output : " + str(output))
+                _print(str(os.getpid()) + " _resp_polling_process output : " + str(output))
                 out_queue.put(output)
                 time.sleep(1)
 
@@ -124,30 +131,34 @@ def _resp_polling_process(in_config, in_dict: Dict, out_queue):
             #                 float(resp['data']["in_use_krw"]))
             #     except Exception:
             #         return resp
-            print(str(os.getpid()) + " _resp_polling_process currency : " + currency)
+            _print(str(os.getpid()) + " _resp_polling_process currency : " + currency)
             resp = client.get_balance(currency)
-            print(str(os.getpid()) + " _resp_polling_process get_balance : " + str(resp))
+            _print(str(os.getpid()) + " _resp_polling_process get_balance : " + str(resp))
             output = {"type": "balance", "currency": currency, "detail": resp}
             out_queue.put(output)
             time.sleep(1)
         time.sleep(10)
 
 
-def _ticker_process(symbols: list, que):
-    print("_ticker_process " + str(os.getpid()))
+def _ticker_process(symbols: list, in_loop, que):
+    _print("_ticker_process " + str(os.getpid()))
     wm = WebSocketManager(type="ticker", symbols=symbols, ticktype=["24H"])
     while True:
+        if not in_loop:
+            wm.terminate()
+            exit()
         resp = wm.get()
-        print("_ticker_process : loop " + str(resp))
+        _print("_ticker_process : loop " + str(resp))
         que.put(resp)
 
 
+
 def _transaction_process(symbols: list, que):
-    print("_transaction_process " + str(os.getpid()))
+    _print("_transaction_process " + str(os.getpid()))
     wm = WebSocketManager(type="transaction", symbols=symbols)
     while True:
         resp = wm.get()
-        print("_transaction_process : loop " + str(resp))
+        _print("_transaction_process : loop " + str(resp))
         que.put(resp)
 
 
@@ -167,12 +178,13 @@ class BinanceStreamManager:
         self.pending_orders_mutex: threading.Lock = threading.Lock()
         self._processors = []
         self.queue = Manager().Queue()
-        self._processors.append(Process(target=_ticker_process, args=(symbols, self.queue)))
+        self._process_control = Manager().Value('b',True)
+        self._processors.append(Process(target=_ticker_process, args=(symbols,self._process_control, self.queue)))
         ##not to use below process to get transaction.
         ##self._processors.append(Process(target=_transaction_process, args=(symbols, self.queue)))
         self._processors.append(Process(target=_resp_polling_process,
                                         args=
-                                        (self.config, self.cache.order_desc, self.queue)))
+                                        (self.config, self._process_control, self.cache.order_desc, self.queue)))
         for process in self._processors:
             process.start()
 
@@ -184,7 +196,7 @@ class BinanceStreamManager:
 
     def _fetch_pending_orders(self):
 
-        print("_fetch_pending_orders")
+        self.logger.info("_fetch_pending_orders")
 
         pending_orders: Set[Tuple[str, int]]
         with self.pending_orders_mutex:
@@ -194,7 +206,7 @@ class BinanceStreamManager:
             while True:
                 desc = self.cache.order_desc[order_id]
                 order = self.client.get_order_completed(desc)
-                print("_fetch_pending_orders : " + str(order))
+                self.logger.info("_fetch_pending_orders : " + str(order))
                 if order is not None:
                     resp = order
                     break
@@ -214,8 +226,8 @@ class BinanceStreamManager:
         cumulative_cost = 0
 
         for contract in data["contract"]:
-            cumulative_cost = cumulative_cost + contract["total"]
-            filled_qty = filled_qty + contract["units"]
+            cumulative_cost = cumulative_cost + int(contract["total"])
+            filled_qty = filled_qty + float(contract["units"])
 
         side = "BUY"
         if data["type"] == "ask":
@@ -241,25 +253,25 @@ class BinanceStreamManager:
             "cumulative_quote_asset_transacted_quantity": cumulative_cost,
             "current_order_status": order_status,
             "order_price": data["order_price"],
-            "transaction_time": data["order_date"],
+            "transaction_time": int(data["order_date"]),
         }
         return report
 
     def _main_thread(self):
-        print("_main_thread")
+        self.logger.info("_main_thread")
         self._fetch_pending_orders()
         self._invalidate_balances()
         while True:
             if not self.is_alive():
-                print("_main_thread : loop - exit")
+                self.logger.info("_main_thread : loop - exit")
                 self.close()
                 sys.exit()
             msg = self.queue.get()
-            print("_main_thread : " + str(msg))
+            ##self.logger.info("_main_thread : " + str(msg))
             if msg["type"] == "order":
-                order_status = self._parse_order(msg["id"], msg["detail"])
-                print("_main_thread " + str(order_status))
-                self.cache.orders[msg["id"]] = order_status
+                report = self._parse_order(msg["id"], msg["detail"])
+                self.logger.info("_main_thread " + str(report))
+                self.cache.orders[msg["id"]] = BinanceOrder(report)
             elif msg["type"] == "ticker":
                 content = msg["content"]
                 if content["tickType"] == "24H":
@@ -278,16 +290,16 @@ class BinanceStreamManager:
                         else:
                             balances[currency] = free_qty
         #
-        #     print("_process_stream_data : end")
+        #     self.logger.info("_process_stream_data : end")
         # https://github.com/binance/binance-spot-api-docs/blob/master/user-data-stream.md
         # event_type = stream_data["event_type"]
         # if event_type == "executionReport":  # !userData
-        #     self.logger.debug(f"execution report: {stream_data}")
+        #     self.logger.info(f"execution report: {stream_data}")
         #     order = BinanceOrder(stream_data)
         #     self.cache.orders[order.id] = order
 
         # elif event_type == "balanceUpdate":  # !userData
-        #     self.logger.debug(f"Balance update: {stream_data}")
+        #     self.logger.info(f"Balance update: {stream_data}")
         #     with self.cache.open_balances() as balances:
         #         asset = stream_data["asset"]
         #         if asset in balances:
@@ -299,14 +311,14 @@ class BinanceStreamManager:
         # #                 float(resp['data']["in_use_krw"]))
         # #     except Exception:
         # #         return resp
-        # print(str(os.getpid()) + " _resp_polling_process currency : " + currency)
+        # self.logger.info(str(os.getpid()) + " _resp_polling_process currency : " + currency)
         # resp = client.get_balance(currency)
-        # print(str(os.getpid()) + " _resp_polling_process get_balance : " + str(resp))
+        # self.logger.info(str(os.getpid()) + " _resp_polling_process get_balance : " + str(resp))
         # output = {"type": "balance", "currency": currency, "detail": resp}
 
 
         # elif event_type in ("outboundAccountPosition", "outboundAccountInfo"):  # !userData
-        #     self.logger.debug(f"{event_type}: {stream_data}")
+        #     self.logger.info(f"{event_type}: {stream_data}")
         #     with self.cache.open_balances() as balances:
         #         for bal in stream_data["balances"]:
         #             balances[bal["asset"]] = float(bal["free"])
@@ -347,12 +359,13 @@ class BinanceStreamManager:
 
     def close(self):
         ##self.bw_api_manager.stop_manager_with_all_streams()
-        print("close")
+        self.logger.info("close")
+        self._process_control.set(False)
         for process in self._processors:
-            process.kill()
+            process.terminate()
+        self._main_loop.join()
 
     def is_alive(self):
-        print("is_alive")
         for process in self._processors:
             if not process.is_alive():
                 return False
