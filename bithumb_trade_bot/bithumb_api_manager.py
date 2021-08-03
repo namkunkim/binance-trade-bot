@@ -63,46 +63,9 @@ class BithumbAPIManager:
                     self.logger.info(currency.symbol + target + " " + str(fee))
         return d
 
-
-    """    @cached(cache=TTLCache(maxsize=1, ttl=60))
-    def get_using_bnb_for_fees(self):
-        return self.binance_client.get_bnb_burn_spot_margin()["spotBNBBurn"]"""
-
     def get_fee(self, origin_coin: Coin, target_coin: Coin, selling: bool):
         base_fee = self.get_trade_fees()[origin_coin + target_coin]
-
         self.logger.info("get_fee base_fee : " + str(base_fee))
-
-        """no support binance coin - BNB"""
-        """        
-        if not self.get_using_bnb_for_fees():
-            return base_fee
-            """
-        # The discount is only applied if we have enough BNB to cover the fee
-        amount_trading = (
-            self._sell_quantity(origin_coin.symbol, target_coin.symbol)
-            if selling
-            else self._buy_quantity(origin_coin.symbol, target_coin.symbol)
-        )
-
-        fee_amount = amount_trading * base_fee * 0.75
-
-        self.logger.info("get_fee fee_amount : " + str(fee_amount))
-
-        if origin_coin.symbol == "BNB":
-            fee_amount_bnb = fee_amount
-        else:
-            origin_price = self.get_ticker_price(origin_coin + Coin("BNB"))
-            if origin_price is None:
-                return base_fee
-            fee_amount_bnb = fee_amount * origin_price
-
-        bnb_balance = self.get_currency_balance("BNB")
-
-        self.logger.info("get_fee bnb_balance : " + str(bnb_balance) + " fee_amount_bnb : " + fee_amount_bnb)
-
-        if bnb_balance >= fee_amount_bnb:
-            return base_fee * 0.75
         return base_fee
 
     def get_account(self):
@@ -314,17 +277,6 @@ class BithumbAPIManager:
         else:
             return 0.001
 
-    def get_min_notional(self, origin_symbol: str, target_symbol: str):
-        """
-        MIN_NOTIONAL
-        :minNotional 최소 구입 갯수 * 비용
-        https://www.bithumb.com/customer_support/info_guide?seq=536&categorySeq=203
-        """
-        orderbook = pybithumb.get_orderbook(origin_symbol, target_symbol)
-        asks = orderbook['asks']
-        price = asks[0]['price']
-        return self.get_sale_unit(price) * price
-
     @cached(cache=TTLCache(maxsize=2000, ttl=43200))
     def get_alt_tick(self, origin_symbol: str, target_symbol: str):
         """step_size = self.get_symbol_filter(origin_symbol, target_symbol, "LOT_SIZE")["stepSize"]"""
@@ -351,6 +303,16 @@ class BithumbAPIManager:
         # return float(self.get_symbol_filter(origin_symbol, target_symbol, "MIN_NOTIONAL")["minNotional"])
         # 빗썸은 최소 비용이 1000원 이상이어야 한다.
         return 1000.0
+    # def get_min_notional(self, origin_symbol: str, target_symbol: str):
+    #     """
+    #     MIN_NOTIONAL
+    #     :minNotional 최소 구입 갯수 * 비용
+    #     https://www.bithumb.com/customer_support/info_guide?seq=536&categorySeq=203
+    #     """
+    #     orderbook = pybithumb.get_orderbook(origin_symbol, target_symbol)
+    #     asks = orderbook['asks']
+    #     price = asks[0]['price']
+    #     return self.get_sale_unit(price) * price
 
     def cancel_order(self, order: BithumbOrder):
         ret = self.client.cancel_order(order.get_order_desc(self.config.BRIDGE))
@@ -376,9 +338,8 @@ class BithumbAPIManager:
         self.logger.info(f"Order created: {order_status}")
 
         while order_status.status != "FILLED":
-            try:
-                order_status = self.cache.orders.get(order_id, None)
 
+                order_status = self.cache.orders.get(order_id, None)
                 self.logger.info(f"Waiting for order {order_id} to be filled")
 
                 if self._should_cancel_order(order_status):
@@ -408,13 +369,6 @@ class BithumbAPIManager:
                 if order_status.status == "CANCELED":
                     self.logger.info("Order is canceled, going back to scouting mode...")
                     return None
-
-                time.sleep(1)
-            except BinanceAPIException as e:
-                self.logger.info(e)
-                time.sleep(1)
-            except Exception as e:  # pylint: disable=broad-except
-                self.logger.info(f"Unexpected Error: {e}")
                 time.sleep(1)
 
         self.logger.info(f"Order filled: {order_status}")
@@ -543,23 +497,21 @@ class BithumbAPIManager:
         order_quantity = order_quantity * 0.9
         self.logger.info(f"BUY QTY[2] {order_quantity} of <{origin_symbol}>")
 
+        if order_quantity * from_coin_price < 500:
+            self.logger.info("BUY QTY : 최소 주문금액은 500 KRW 입니다")
+            return None
+
         # Try to buy until successful
         order = None
         order_guard = self.stream_manager.acquire_order_guard()
         while order is None:
-            try:
-                """order = self.binance_client.order_limit_buy(
-                    symbol=origin_symbol + target_symbol,
-                    quantity=order_quantity,
-                    price=from_coin_price,
-                )"""
-                order = self.buy_limit_order(origin_symbol, target_symbol, from_coin_price, order_quantity)
-                self.logger.info(order)
-            except BinanceAPIException as e:
-                self.logger.info(e)
-                time.sleep(1)
-            except Exception as e:  # pylint: disable=broad-except
-                self.logger.warning(f"Unexpected Error: {e}")
+            """order = self.binance_client.order_limit_buy(
+                symbol=origin_symbol + target_symbol,
+                quantity=order_quantity,
+                price=from_coin_price,
+            )"""
+            order = self.buy_limit_order(origin_symbol, target_symbol, from_coin_price, order_quantity)
+            self.logger.info(order)
 
         trade_log.set_ordered(origin_balance, target_balance, order_quantity)
 
@@ -583,7 +535,7 @@ class BithumbAPIManager:
     def _sell_quantity(self, origin_symbol: str, target_symbol: str, origin_balance: float = None):
         origin_balance = origin_balance or self.get_currency_balance(origin_symbol)
 
-        origin_tick = self.get_alt_tick(origin_symbol, target_symbol)
+        origin_tick = self. get_alt_tick(origin_symbol, target_symbol)
         return math.floor(origin_balance * 10 ** origin_tick) / float(10 ** origin_tick)
 
     def sell_limit_order(self, order_currency: str, payment_currency: str, price: int, unit: int):
